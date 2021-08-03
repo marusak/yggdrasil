@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"sync"
 	"time"
 
 	"git.sr.ht/~spc/go-log"
@@ -24,12 +23,11 @@ type worker struct {
 
 type dispatcher struct {
 	pb.UnimplementedDispatcherServer
-	sync.RWMutex
 	dispatchers chan map[string]map[string]string
 	sendQ       chan yggdrasil.Data
 	recvQ       chan yggdrasil.Data
 	deadWorkers chan int
-	workers     map[string]worker
+	reg         registry
 	pidHandlers map[int]string
 }
 
@@ -39,19 +37,16 @@ func newDispatcher() *dispatcher {
 		sendQ:       make(chan yggdrasil.Data),
 		recvQ:       make(chan yggdrasil.Data),
 		deadWorkers: make(chan int),
-		workers:     make(map[string]worker),
+		reg:         registry{},
 		pidHandlers: make(map[int]string),
 	}
 }
 
 func (d *dispatcher) Register(ctx context.Context, r *pb.RegistrationRequest) (*pb.RegistrationResponse, error) {
-	d.RLock()
-	if _, prs := d.workers[r.GetHandler()]; prs {
-		d.RUnlock()
+	if d.reg.get(r.GetHandler()) != nil {
 		log.Errorf("worker failed to register for handler %v", r.GetHandler())
 		return &pb.RegistrationResponse{Registered: false}, nil
 	}
-	d.RUnlock()
 
 	w := worker{
 		pid:             int(r.GetPid()),
@@ -61,10 +56,8 @@ func (d *dispatcher) Register(ctx context.Context, r *pb.RegistrationRequest) (*
 		detachedContent: r.GetDetachedContent(),
 	}
 
-	d.Lock()
-	d.workers[r.GetHandler()] = w
+	d.reg.set(r.GetHandler(), &w)
 	d.pidHandlers[int(r.GetPid())] = r.GetHandler()
-	d.Unlock()
 
 	log.Infof("worker registered: %+v", w)
 
@@ -114,11 +107,9 @@ func (d *dispatcher) Send(ctx context.Context, r *pb.Data) (*pb.Receipt, error) 
 func (d *dispatcher) sendData() {
 	for data := range d.sendQ {
 		f := func() {
-			d.RLock()
-			w, prs := d.workers[data.Directive]
-			d.RUnlock()
+			w := d.reg.get(data.Directive)
 
-			if !prs {
+			if w == nil {
 				log.Warnf("cannot route message to directive: %v", data.Directive)
 				return
 			}
@@ -178,11 +169,9 @@ func (d *dispatcher) sendData() {
 
 func (d *dispatcher) unregisterWorker() {
 	for pid := range d.deadWorkers {
-		d.Lock()
 		handler := d.pidHandlers[pid]
 		delete(d.pidHandlers, pid)
-		delete(d.workers, handler)
-		d.Unlock()
+		d.reg.del(handler)
 		log.Infof("unregistered worker: %v", handler)
 
 		d.sendDispatchersMap()
@@ -190,11 +179,8 @@ func (d *dispatcher) unregisterWorker() {
 }
 
 func (d *dispatcher) makeDispatchersMap() map[string]map[string]string {
-	d.RLock()
-	defer d.RUnlock()
-
 	dispatchers := make(map[string]map[string]string)
-	for handler, worker := range d.workers {
+	for handler, worker := range d.reg.all() {
 		dispatchers[handler] = worker.features
 	}
 
