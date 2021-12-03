@@ -1,9 +1,14 @@
 package main
 
 import (
-	"fmt"
 	"sync"
 )
+
+var errWorkerRegistered = registryError("cannot add worker; a worker is already registered")
+
+type registryError string
+
+func (e registryError) Error() string { return string(e) }
 
 type registry struct {
 	mu sync.RWMutex
@@ -16,7 +21,7 @@ func (r *registry) set(handler string, w *worker) error {
 	}
 
 	if r.get(handler) != nil {
-		return fmt.Errorf("cannot add worker; a worker is already registered")
+		return errWorkerRegistered
 	}
 
 	r.mu.Lock()
