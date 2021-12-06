@@ -26,6 +26,7 @@ import (
 )
 
 var ClientID string = ""
+var SocketAddr string = ""
 
 func main() {
 	app := cli.NewApp()
@@ -154,8 +155,8 @@ func main() {
 		log.Infof("starting %v version %v", app.Name, app.Version)
 
 		log.Trace("attempting to kill any orphaned workers")
-		if err := killWorkers(); err != nil {
-			return cli.Exit(fmt.Errorf("cannot kill workers: %w", err), 1)
+		if err := stopWorkers(); err != nil {
+			return cli.Exit(fmt.Errorf("cannot stop workers: %w", err), 1)
 		}
 
 		clientIDFile := filepath.Join(yggdrasil.LocalstateDir, yggdrasil.LongName, "client-id")
@@ -182,6 +183,7 @@ func main() {
 		}
 
 		ClientID = string(clientID)
+		SocketAddr = c.String("socket-addr")
 
 		// Read certificates, create a TLS config, and initialize HTTP client
 		var certData, keyData []byte
@@ -215,12 +217,12 @@ func main() {
 		s := grpc.NewServer()
 		pb.RegisterDispatcherServer(s, d)
 
-		l, err := net.Listen("unix", c.String("socket-addr"))
+		l, err := net.Listen("unix", SocketAddr)
 		if err != nil {
 			return cli.Exit(fmt.Errorf("cannot listen to socket: %w", err), 1)
 		}
 		go func() {
-			log.Infof("listening on socket: %v", c.String("socket-addr"))
+			log.Infof("listening on socket: %v", SocketAddr)
 			if err := s.Serve(l); err != nil {
 				log.Errorf("cannot start server: %v", err)
 			}
@@ -339,10 +341,6 @@ func main() {
 			return cli.Exit(fmt.Errorf("cannot read contents of directory: %w", err), 1)
 		}
 
-		env := []string{
-			"YGG_SOCKET_ADDR=unix:" + c.String("socket-addr"),
-			"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-		}
 		for _, info := range fileInfos {
 			log.Debugf("starting worker: %v", info.Name())
 			config, err := loadWorkerConfig(filepath.Join(workerPath, info.Name()))
@@ -350,11 +348,18 @@ func main() {
 				log.Errorf("cannot load worker config: %v", err)
 				continue
 			}
-			go startProcess(config.Exec, env, 0, d.deadWorkers)
+			go func() {
+				if err := startWorker(*config, nil, func(pid int) {
+					d.deadWorkers <- pid
+				}); err != nil {
+					log.Errorf("cannot start worker: %v", err)
+					return
+				}
+			}()
 		}
 		// Start a goroutine that watches the worker directory for added or
 		// deleted files. Any "worker" files it detects are started up.
-		go watchWorkerDir(workerPath, env, d.deadWorkers)
+		go watchWorkerDir(workerPath, d.deadWorkers)
 
 		// Start a goroutine that receives handler values on a channel and
 		// removes the worker registration entry.
@@ -384,8 +389,8 @@ func main() {
 
 		<-quit
 
-		if err := killWorkers(); err != nil {
-			return cli.Exit(fmt.Errorf("cannot kill workers: %w", err), 1)
+		if err := stopWorkers(); err != nil {
+			return cli.Exit(fmt.Errorf("cannot stop workers: %w", err), 1)
 		}
 
 		return nil
