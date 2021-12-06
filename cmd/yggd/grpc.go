@@ -56,7 +56,9 @@ func (d *dispatcher) Register(ctx context.Context, r *pb.RegistrationRequest) (*
 		detachedContent: r.GetDetachedContent(),
 	}
 
-	d.reg.set(r.GetHandler(), &w)
+	if err := d.reg.set(r.GetHandler(), &w); err != nil {
+		return &pb.RegistrationResponse{Registered: false}, nil
+	}
 	d.pidHandlers[int(r.GetPid())] = r.GetHandler()
 
 	log.Infof("worker registered: %+v", w)
