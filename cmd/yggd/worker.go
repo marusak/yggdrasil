@@ -128,7 +128,7 @@ func startWorker(config workerConfig, started func(pid int), stopped func(pid in
 			go started(pid)
 		}
 
-		waitProcess(pid, func(pid int, state *os.ProcessState) {
+		if err := waitProcess(pid, func(pid int, state *os.ProcessState) {
 			log.Infof("worker stopped: %v", pid)
 
 			if state.SystemTime() < time.Duration(1*time.Second) {
@@ -149,7 +149,9 @@ func startWorker(config workerConfig, started func(pid int), stopped func(pid in
 					return
 				}
 			}
-		})
+		}); err != nil {
+			log.Errorf("process exited with an error: %v", err)
+		}
 	})
 
 	if err != nil {
