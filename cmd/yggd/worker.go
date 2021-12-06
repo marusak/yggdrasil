@@ -67,7 +67,7 @@ func startWorker(config workerConfig, started func(pid int), stopped func(pid in
 	}
 
 	validEnvVar := func(val string) bool {
-		for _, variable := range []string{"PATH=", "YGG_SOCKET_ADDR"} {
+		for _, variable := range []string{"PATH=", "YGG_SOCKET_ADDR="} {
 			if strings.HasPrefix(val, variable) {
 				return false
 			}
