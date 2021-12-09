@@ -57,6 +57,11 @@ func startWorker(config workerConfig, started func(pid int), stopped func(pid in
 
 	env := []string{
 		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		"http_proxy=" + os.Getenv("http_proxy"),
+		"HTTP_PROXY=" + os.Getenv("HTTP_PROXY"),
+		"HTTPS_PROXY=" + os.Getenv("HTTPS_PROXY"),
+		"ALL_PROXY=" + os.Getenv("ALL_PROXY"),
+		"NO_PROXY=" + os.Getenv("NO_PROXY"),
 	}
 
 	switch config.Protocol {
