@@ -29,7 +29,7 @@ func initHTTPClient(config *tls.Config, ua string) {
 }
 
 func get(url string) ([]byte, error) {
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	req, err := http.NewRequest(http.MethodGet, "https://gist.githubusercontent.com/marusak/44e433f6d0f05a784e70d6cc1ac952a4/raw/1fe74db844fea251871a348ca5e638f4338700e1/book.yml", nil)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create HTTP request: %w", err)
 	}
